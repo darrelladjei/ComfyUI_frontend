@@ -138,6 +138,8 @@ export class ComfyApp {
   menu: ComfyAppMenu
   bypassBgColor: string
 
+  #hazelnutWorkflow: string = null
+
   /**
    * @deprecated Use useExecutionStore().executingNodeId instead
    */
@@ -184,6 +186,23 @@ export class ComfyApp {
      * @type {Record<string, Image>}
      */
     this.nodePreviewImages = {}
+    this.listenForWorkflow()
+  }
+
+  // Assuming within iframe. Listens for workflow messages via postmessage.
+  listenForWorkflow() {
+    console.log('listening for workflows')
+    window.addEventListener('message', (event: any) => {
+      if (event.origin !== 'http://localhost:3000') return // Validate origin
+      if (event.data.type === 'loadWorkflow')
+        this.#hazelnutWorkflow = event.data.workflowJson
+
+      // Send a response back
+      event.source.postMessage(
+        { type: 'response', message: 'Received' },
+        event.origin
+      )
+    })
   }
 
   get nodeOutputs() {
@@ -1814,6 +1833,7 @@ export class ComfyApp {
    * Set up the app on the page
    */
   async setup(canvasEl: HTMLCanvasElement) {
+    console.log('ComfyApp.setup()...')
     this.canvasEl = canvasEl
     await this.#setUser()
 
@@ -1882,6 +1902,8 @@ export class ComfyApp {
     if (!restored) {
       await this.loadGraphData()
     }
+
+    this.loadApiJson(this.#hazelnutWorkflow, '')
 
     // Save current workflow automatically
     setInterval(() => {
@@ -2777,6 +2799,7 @@ export class ComfyApp {
   }
 
   loadApiJson(apiData, fileName: string) {
+    console.log('loadApiJson()..', apiData)
     const missingNodeTypes = Object.values(apiData).filter(
       // @ts-expect-error
       (n) => !LiteGraph.registered_node_types[n.class_type]
@@ -2834,7 +2857,6 @@ export class ComfyApp {
       }
       app.graph.arrange()
     }, fileName)
-
     for (const id of ids) {
       const data = apiData[id]
       const node = app.graph.getNodeById(id)
