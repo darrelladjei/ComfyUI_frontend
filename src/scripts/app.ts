@@ -130,6 +130,8 @@ export class ComfyApp {
   // Set by Comfy.Clipspace extension
   openClipspace: () => void = () => {}
 
+  #hazelnutWorkflow: string = null
+
   /**
    * @deprecated Use useExecutionStore().executingNodeId instead
    */
@@ -209,6 +211,23 @@ export class ComfyApp {
      * @type {Record<string, Image>}
      */
     this.nodePreviewImages = {}
+    this.listenForWorkflow()
+  }
+
+  // Assuming within iframe. Listens for workflow messages via postmessage.
+  listenForWorkflow() {
+    console.log('listening for workflows')
+    window.addEventListener('message', (event: any) => {
+      if (event.origin !== 'http://localhost:3000') return // Validate origin
+      if (event.data.type === 'loadWorkflow')
+        this.#hazelnutWorkflow = event.data.workflowJson
+
+      // Send a response back
+      event.source.postMessage(
+        { type: 'response', message: 'Received' },
+        event.origin
+      )
+    })
   }
 
   get nodeOutputs() {
@@ -996,6 +1015,7 @@ export class ComfyApp {
    * Set up the app on the page
    */
   async setup(canvasEl: HTMLCanvasElement) {
+    console.log('ComfyApp.setup()...')
     this.canvasEl = canvasEl
     this.resizeCanvas()
 
@@ -1034,6 +1054,18 @@ export class ComfyApp {
 
     await useExtensionService().invokeExtensionsAsync('init')
     await this.registerNodes()
+
+    this.loadApiJson(this.#hazelnutWorkflow, '')
+
+    // Save current workflow automatically
+    setInterval(() => {
+      const sortNodes = useSettingStore().get('Comfy.Workflow.SortNodeIdOnSave')
+      const workflow = JSON.stringify(this.graph.serialize({ sortNodes }))
+      localStorage.setItem('workflow', workflow)
+      if (api.clientId) {
+        sessionStorage.setItem(`workflow:${api.clientId}`, workflow)
+      }
+    }, 1000)
 
     this.#addDrawNodeHandler()
     this.#addDrawGroupsHandler()
@@ -1831,7 +1863,6 @@ export class ComfyApp {
 
   loadApiJson(apiData, fileName: string) {
     useWorkflowService().beforeLoadNewGraph()
-
     const missingNodeTypes = Object.values(apiData).filter(
       // @ts-expect-error
       (n) => !LiteGraph.registered_node_types[n.class_type]
@@ -1886,7 +1917,6 @@ export class ComfyApp {
       }
     }
     app.graph.arrange()
-
     for (const id of ids) {
       const data = apiData[id]
       const node = app.graph.getNodeById(id)
