@@ -54,6 +54,11 @@ import { type ComfyWidgetConstructor, ComfyWidgets } from './widgets'
 
 export const ANIM_PREVIEW_WIDGET = '$$comfy_animation_preview'
 
+// BEGIN Hazelnut imports
+import fs from 'fs'
+import path from 'path'
+// END Hazelnut imports
+
 function sanitizeNodeName(string) {
   let entityMap = {
     '&': '',
@@ -211,9 +216,13 @@ export class ComfyApp {
      * @type {Record<string, Image>}
      */
     this.nodePreviewImages = {}
-    this.listenForWorkflow()
+
+    // BEGIN Hazelnut extensions
+    // this.listenForWorkflow();
+    // END Hazelnut extensions
   }
 
+  // BEGIN Hazelnut extensions
   // Assuming within iframe. Listens for workflow messages via postmessage.
   listenForWorkflow() {
     console.log('listening for workflows')
@@ -229,6 +238,200 @@ export class ComfyApp {
       )
     })
   }
+
+  async convertWorkflows(inputDirectory: string, outputDirectory: string) {
+    console.log('convertWorkflows')
+
+    try {
+      // Assuming `inputDirectory` is a folder accessible via HTTP
+      const workflowDataResponse = await fetch(
+        `${inputDirectory}/Flux Auto Inpainter with Lora Auto-Injection by EnragedAntelope.json`
+      )
+
+      // Loop through each file
+      // for (const file of files.filter(file => file.endsWith('.json'))) {
+      console.log('Looking at file', workflowDataResponse)
+
+      try {
+        // Fetch each workflow JSON file
+        const workflowData = await workflowDataResponse.text()
+        console.log('Looking at file', workflowData)
+        const workflowJson = JSON.parse(workflowData)
+
+        // Create a new graph instance
+        const graph = new LGraph()
+        graph.configure(workflowJson)
+
+        // Convert the graph to API format
+        const apiWorkflow = (await this._graphToPrompt(graph))?.output
+        console.log('Got apiWorkflow', apiWorkflow)
+
+        // Here, you can't use fs to save on the client side.
+        // Instead, you can trigger a download, or send the data to a server
+        const outputData = JSON.stringify(apiWorkflow, null, 2)
+        const blob = new Blob([outputData], { type: 'application/json' })
+        const link = document.createElement('a')
+        link.href = URL.createObjectURL(blob)
+        link.download = `api-workflow.json`
+        document.body.appendChild(link)
+        link.click()
+        document.body.removeChild(link)
+
+        console.log(`Converted workflow to API format.`)
+      } catch (error) {
+        console.error(`Error processing`, error)
+      }
+      // }
+    } catch (error) {
+      console.error('Error fetching workflow files:', error)
+    }
+  }
+
+  /**
+   * Converts the current graph workflow for sending to the API
+   * @returns The workflow and node links
+   */
+  async _graphToPrompt(graph: LGraph, clean = true) {
+    console.log('_graphToPrompt()...')
+    for (const outerNode of graph.computeExecutionOrder(false)) {
+      if (outerNode.widgets) {
+        for (const widget of outerNode.widgets) {
+          // Allow widgets to run callbacks before a prompt has been queued
+          // e.g. random seed before every gen
+          widget.beforeQueued?.()
+        }
+      }
+
+      const innerNodes = outerNode['getInnerNodes']
+        ? outerNode['getInnerNodes']()
+        : [outerNode]
+      for (const node of innerNodes) {
+        if (node.isVirtualNode) {
+          // Don't serialize frontend only nodes but let them make changes
+          if (node.applyToGraph) {
+            node.applyToGraph()
+          }
+        }
+      }
+    }
+
+    const sortNodes = useSettingStore().get('Comfy.Workflow.SortNodeIdOnSave')
+
+    const workflow = graph.serialize({ sortNodes })
+    const output = {}
+    // Process nodes in order of execution
+    for (const outerNode of graph.computeExecutionOrder(false)) {
+      const skipNode = outerNode.mode === 2 || outerNode.mode === 4
+      const innerNodes =
+        !skipNode && outerNode['getInnerNodes']
+          ? outerNode['getInnerNodes']()
+          : [outerNode]
+      for (const node of innerNodes) {
+        if (node.isVirtualNode) {
+          continue
+        }
+
+        if (node.mode === 2 || node.mode === 4) {
+          // Don't serialize muted nodes
+          continue
+        }
+
+        const inputs = {}
+        const widgets = node.widgets
+
+        // Store all widget values
+        if (widgets) {
+          for (const i in widgets) {
+            const widget = widgets[i]
+            if (!widget.options || widget.options.serialize !== false) {
+              inputs[widget.name] = widget.serializeValue
+                ? await widget.serializeValue(node, i)
+                : widget.value
+            }
+          }
+        }
+
+        // Store all node links
+        for (let i in node.inputs) {
+          let parent = node.getInputNode(i)
+          if (parent) {
+            let link = node.getInputLink(i)
+            while (parent.mode === 4 || parent.isVirtualNode) {
+              let found = false
+              if (parent.isVirtualNode) {
+                link = parent.getInputLink(link.origin_slot)
+                if (link) {
+                  parent = parent.getInputNode(link.target_slot)
+                  if (parent) {
+                    found = true
+                  }
+                }
+              } else if (link && parent.mode === 4) {
+                let all_inputs = [link.origin_slot]
+                if (parent.inputs) {
+                  all_inputs = all_inputs.concat(Object.keys(parent.inputs))
+                  for (let parent_input in all_inputs) {
+                    parent_input = all_inputs[parent_input]
+                    if (
+                      parent.inputs[parent_input]?.type === node.inputs[i].type
+                    ) {
+                      link = parent.getInputLink(parent_input)
+                      if (link) {
+                        parent = parent.getInputNode(parent_input)
+                      }
+                      found = true
+                      break
+                    }
+                  }
+                }
+              }
+
+              if (!found) {
+                break
+              }
+            }
+
+            if (link) {
+              if (parent?.updateLink) {
+                link = parent.updateLink(link)
+              }
+              if (link) {
+                inputs[node.inputs[i].name] = [
+                  String(link.origin_id),
+                  parseInt(link.origin_slot)
+                ]
+              }
+            }
+          }
+        }
+
+        let node_data = {
+          inputs,
+          class_type: node.comfyClass,
+          _meta: { title: node.title ?? 'title' }
+        }
+        output[String(node.id)] = node_data
+      }
+    }
+
+    // Remove inputs connected to removed nodes
+    if (clean) {
+      for (const o in output) {
+        for (const i in output[o].inputs) {
+          if (
+            Array.isArray(output[o].inputs[i]) &&
+            output[o].inputs[i].length === 2 &&
+            !output[output[o].inputs[i][0]]
+          ) {
+            delete output[o].inputs[i]
+          }
+        }
+      }
+    }
+
+    return { workflow, output }
+  }
+  // END Hazelnut extensions
 
   get nodeOutputs() {
     return this._nodeOutputs
