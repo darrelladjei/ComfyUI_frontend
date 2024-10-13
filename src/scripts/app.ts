@@ -133,7 +133,7 @@ export class ComfyApp {
   menu: ComfyAppMenu
   bypassBgColor: string
   // Set by Comfy.Clipspace extension
-  openClipspace: () => void = () => {}
+  openClipspace: () => void = () => { }
 
   #hazelnutWorkflow: string = null
 
@@ -239,49 +239,43 @@ export class ComfyApp {
     })
   }
 
-  async convertWorkflows(inputDirectory: string, outputDirectory: string) {
-    console.log('convertWorkflows')
-
+  async convertWorkflows(inputDirectory: string) {
+    console.log('convertWorkflows()...')
     try {
-      // Assuming `inputDirectory` is a folder accessible via HTTP
-      const workflowDataResponse = await fetch(
-        `${inputDirectory}/Flux Auto Inpainter with Lora Auto-Injection by EnragedAntelope.json`
+      const workflowListResponse = await fetch(
+        `${inputDirectory}/workflowList.json`
       )
+      const fileList = await workflowListResponse.json()
 
-      // Loop through each file
-      // for (const file of files.filter(file => file.endsWith('.json'))) {
-      console.log('Looking at file', workflowDataResponse)
+      for (const file of fileList) {
+        console.log('Looking at file', file)
+        try {
+          // Fetch each workflow JSON file
+          const workflowDataResponse = await fetch(`${inputDirectory}/${file}`)
+          const workflowData = await workflowDataResponse.text()
+          const workflowJson = JSON.parse(workflowData)
 
-      try {
-        // Fetch each workflow JSON file
-        const workflowData = await workflowDataResponse.text()
-        console.log('Looking at file', workflowData)
-        const workflowJson = JSON.parse(workflowData)
+          // Create a new graph instance
+          const graph = new LGraph()
+          graph.configure(workflowJson)
 
-        // Create a new graph instance
-        const graph = new LGraph()
-        graph.configure(workflowJson)
+          // Convert the graph to API format
+          const apiWorkflow = (await this._graphToPrompt(graph))?.output
 
-        // Convert the graph to API format
-        const apiWorkflow = (await this._graphToPrompt(graph))?.output
-        console.log('Got apiWorkflow', apiWorkflow)
-
-        // Here, you can't use fs to save on the client side.
-        // Instead, you can trigger a download, or send the data to a server
-        const outputData = JSON.stringify(apiWorkflow, null, 2)
-        const blob = new Blob([outputData], { type: 'application/json' })
-        const link = document.createElement('a')
-        link.href = URL.createObjectURL(blob)
-        link.download = `api-workflow.json`
-        document.body.appendChild(link)
-        link.click()
-        document.body.removeChild(link)
-
-        console.log(`Converted workflow to API format.`)
-      } catch (error) {
-        console.error(`Error processing`, error)
+          // Here, trigger a download for each file, or send the data to a server
+          const outputData = JSON.stringify(apiWorkflow, null, 2)
+          const blob = new Blob([outputData], { type: 'application/json' })
+          const link = document.createElement('a')
+          link.href = URL.createObjectURL(blob)
+          link.download = `api-${file}`
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          console.log(`Converted workflow ${file} to API format.`)
+        } catch (error) {
+          console.error(`Error processing ${file}:`, error)
+        }
       }
-      // }
     } catch (error) {
       console.error('Error fetching workflow files:', error)
     }
@@ -1258,7 +1252,9 @@ export class ComfyApp {
     await useExtensionService().invokeExtensionsAsync('init')
     await this.registerNodes()
 
+    // BEGIN Hazelnut extensions
     this.loadApiJson(this.#hazelnutWorkflow, '')
+    // END Hazelnut extensions
 
     // Save current workflow automatically
     setInterval(() => {
@@ -1483,7 +1479,7 @@ export class ComfyApp {
       // TODO: Show validation error in a dialog.
       const validatedGraphData = await validateComfyWorkflow(
         graphData,
-        /* onError=*/ (err) => {
+        /* onError=*/(err) => {
           useToastStore().addAlert(err)
         }
       )
@@ -1887,7 +1883,7 @@ export class ComfyApp {
 
     try {
       while (this.#queueItems.length) {
-        ;({ number, batchCount } = this.#queueItems.pop())
+        ; ({ number, batchCount } = this.#queueItems.pop())
 
         for (let i = 0; i < batchCount; i++) {
           const p = await this.graphToPrompt()
@@ -1906,7 +1902,7 @@ export class ComfyApp {
                   workflow: useWorkspaceStore().workflow
                     .activeWorkflow as ComfyWorkflow
                 })
-              } catch (error) {}
+              } catch (error) { }
             }
           } catch (error) {
             const formattedError = this.#formatPromptError(error)
@@ -2105,7 +2101,7 @@ export class ComfyApp {
               if (widget && node.convertWidgetToInput?.(widget)) {
                 toSlot = node.inputs?.length - 1
               }
-            } catch (error) {}
+            } catch (error) { }
           }
           if (toSlot != null || toSlot !== -1) {
             fromNode.connect(fromSlot, node, toSlot)
@@ -2137,7 +2133,7 @@ export class ComfyApp {
               if (widget && node.convertWidgetToInput?.(widget)) {
                 toSlot = node.inputs?.length - 1
               }
-            } catch (error) {}
+            } catch (error) { }
           }
           if (toSlot != null || toSlot !== -1) {
             fromNode.connect(fromSlot, node, toSlot)
