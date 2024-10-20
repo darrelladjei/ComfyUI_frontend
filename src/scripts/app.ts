@@ -218,7 +218,7 @@ export class ComfyApp {
     this.nodePreviewImages = {}
 
     // BEGIN Hazelnut extensions
-    // this.listenForWorkflow();
+    this.listenForWorkflow()
     // END Hazelnut extensions
   }
 
@@ -227,6 +227,7 @@ export class ComfyApp {
   listenForWorkflow() {
     console.log('listening for workflows')
     window.addEventListener('message', (event: any) => {
+      console.log('Got message', event.data)
       if (event.origin !== 'http://localhost:3000') return // Validate origin
       if (event.data.type === 'loadWorkflow')
         this.#hazelnutWorkflow = event.data.workflowJson
