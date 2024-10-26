@@ -202,8 +202,7 @@ export class ComfyApp {
   listenForWorkflow() {
     console.log('listening for workflows')
     window.addEventListener('message', (event: any) => {
-      console.log('Got message', event.data)
-      if (event.origin !== 'http://localhost:3000') return // Validate origin
+      // console.log('Got message', event.data)
       if (event.data.type === 'loadWorkflow')
         this.#hazelnutWorkflow = event.data.workflowJson
 
@@ -3004,7 +3003,7 @@ export class ComfyApp {
   }
 
   loadApiJson(apiData, fileName: string) {
-    console.log('loadApiJson()..', apiData)
+    // console.log('loadApiJson()..', apiData)
     const missingNodeTypes = Object.values(apiData).filter(
       // @ts-expect-error
       (n) => !LiteGraph.registered_node_types[n.class_type]
