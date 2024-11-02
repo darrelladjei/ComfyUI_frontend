@@ -61,6 +61,7 @@ export const ANIM_PREVIEW_WIDGET = '$$comfy_animation_preview'
 // BEGIN Hazelnut imports
 import fs from 'fs'
 import path from 'path'
+import { getFromPngBuffer } from './metadata/png'
 // END Hazelnut imports
 
 function sanitizeNodeName(string) {
@@ -214,8 +215,8 @@ export class ComfyApp {
     })
   }
 
-  async convertWorkflows(inputDirectory: string) {
-    console.log('convertWorkflows()...')
+  async convertJsonWorkflows(inputDirectory: string) {
+    console.log('convertJsonWorkflows()...')
     try {
       const workflowListResponse = await fetch(
         `${inputDirectory}/workflowList.json`
@@ -223,6 +224,7 @@ export class ComfyApp {
       const fileList = await workflowListResponse.json()
 
       for (const file of fileList) {
+        if (!file.endsWith('.json')) continue
         console.log('Looking at file', file)
         try {
           // Fetch each workflow JSON file
@@ -236,6 +238,62 @@ export class ComfyApp {
 
           // Convert the graph to API format
           const apiWorkflow = (await this._graphToPrompt(graph))?.output
+
+          // Here, trigger a download for each file, or send the data to a server
+          const outputData = JSON.stringify(apiWorkflow, null, 2)
+          const blob = new Blob([outputData], { type: 'application/json' })
+          const link = document.createElement('a')
+          link.href = URL.createObjectURL(blob)
+          link.download = `api-${file}`
+          document.body.appendChild(link)
+          link.click()
+          document.body.removeChild(link)
+          console.log(`Converted workflow ${file} to API format.`)
+        } catch (error) {
+          console.error(`Error processing ${file}:`, error)
+        }
+      }
+    } catch (error) {
+      console.error('Error fetching workflow files:', error)
+    }
+  }
+
+  async convertPngWorkflows(inputDirectory: string) {
+    console.log('convertPngWorkflows()...')
+    try {
+      const workflowListResponse = await fetch(
+        `${inputDirectory}/workflowList.json`
+      )
+      const fileList: string[] = await workflowListResponse.json()
+
+      for (const file of fileList) {
+        if (!file.endsWith('.png')) continue
+        console.log('Looking at file', file)
+        try {
+          // Fetch each workflow png file
+          const workflowDataResponse = await fetch(`${inputDirectory}/${file}`)
+          const workflowData = await (
+            await workflowDataResponse.blob()
+          )?.arrayBuffer()
+          if (!workflowData) {
+            console.error('Issue converting png workflow', file)
+            continue
+          }
+          const pngInfo = getFromPngBuffer(workflowData)
+          let apiWorkflow: any
+          if (pngInfo?.workflow) {
+            // Create a new graph instance
+            const graph = new LGraph()
+            graph.configure(JSON.parse(pngInfo.workflow))
+
+            // Convert the graph to API format
+            apiWorkflow = (await this._graphToPrompt(graph))?.output
+          } else if (pngInfo?.prompt) {
+            apiWorkflow = JSON.parse(pngInfo.prompt)
+          } else {
+            console.warn('Weird png file type seen for', file)
+            continue
+          }
 
           // Here, trigger a download for each file, or send the data to a server
           const outputData = JSON.stringify(apiWorkflow, null, 2)
@@ -2074,8 +2132,8 @@ export class ComfyApp {
     initWidgets(this)
 
     // BEGIN Hazelnut extensions
-    // this.listenForWorkflow();
-    // this.convertWorkflows('/workflows')
+    // this.convertJsonWorkflows('/workflows')
+    // this.convertPngWorkflows('/workflows')
     // END Hazelnut extensions
 
     // Load previous workflow
@@ -2106,7 +2164,7 @@ export class ComfyApp {
     }
 
     // BEGIN Hazelnut extensions
-    this.loadApiJson(this.#hazelnutWorkflow, '')
+    if (this.#hazelnutWorkflow) this.loadApiJson(this.#hazelnutWorkflow, '')
     // END Hazelnut extensions
 
     // Save current workflow automatically
