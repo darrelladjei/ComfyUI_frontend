@@ -300,7 +300,7 @@ export class ComfyApp {
           const blob = new Blob([outputData], { type: 'application/json' })
           const link = document.createElement('a')
           link.href = URL.createObjectURL(blob)
-          link.download = `api-${file}`
+          link.download = `api-${file.replace(/\.[^/.]+$/, '')}.json`
           document.body.appendChild(link)
           link.click()
           document.body.removeChild(link)

@@ -521,9 +521,9 @@ export class ComfyUI {
                 oninput: (i) => {
                   this.batchCount = i.target.value
                   /* Even though an <input> element with a type of range logically represents a number (since
-                  it's used for numeric input), the value it holds is still treated as a string in HTML and
-                  JavaScript. This behavior is consistent across all <input> elements regardless of their type
-                  (like text, number, or range), where the .value property is always a string. */
+                    it's used for numeric input), the value it holds is still treated as a string in HTML and
+                    JavaScript. This behavior is consistent across all <input> elements regardless of their type
+                    (like text, number, or range), where the .value property is always a string. */
                   ;(
                     document.getElementById(
                       'batchCountInputRange'
