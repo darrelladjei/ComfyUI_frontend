@@ -144,7 +144,8 @@ export class ComfyApp {
   menu: ComfyAppMenu
   bypassBgColor: string
 
-  #hazelnutWorkflow: string = null
+  #hazelnutWorkflow: any = null
+  #hazelnutReady: boolean = false
 
   /**
    * @deprecated Use useExecutionStore().executingNodeId instead
@@ -203,15 +204,25 @@ export class ComfyApp {
   listenForWorkflow() {
     console.log('listening for workflows')
     window.addEventListener('message', (event: any) => {
-      // console.log('Got message', event.data)
-      if (event.data.type === 'loadWorkflow')
-        this.#hazelnutWorkflow = event.data.workflowJson
+      if (event.data.type === 'loadWorkflow') {
+        this.#hazelnutWorkflow = event.data.workflow
+        console.log('Should be loading workflow')
+        if (this.#hazelnutReady) {
+          this.loadGraphData(this.#hazelnutWorkflow, true, true, '')
+        }
+        event.source.postMessage(
+          { type: 'response', message: 'Received' },
+          event.origin
+        )
+      }
 
-      // Send a response back
-      event.source.postMessage(
-        { type: 'response', message: 'Received' },
-        event.origin
-      )
+      if (event.data.type === 'getWorkflow') {
+        const worklflow = localStorage.getItem('workflow')
+        event.source.postMessage(
+          { type: 'workflow', message: worklflow },
+          event.origin
+        )
+      }
     })
   }
 
@@ -2164,7 +2175,8 @@ export class ComfyApp {
     }
 
     // BEGIN Hazelnut extensions
-    if (this.#hazelnutWorkflow) this.loadApiJson(this.#hazelnutWorkflow, '')
+    if (this.#hazelnutWorkflow)
+      await this.loadGraphData(this.#hazelnutWorkflow, true, true, '')
     // END Hazelnut extensions
 
     // Save current workflow automatically
@@ -2185,6 +2197,10 @@ export class ComfyApp {
     this.#addWidgetLinkHandling()
 
     await this.#invokeExtensionsAsync('setup')
+
+    // BEGIN Hazelnut extensions
+    this.#hazelnutReady = true
+    // END Hazelnut extensions
   }
 
   resizeCanvas() {
