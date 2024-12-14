@@ -206,7 +206,6 @@ export class ComfyApp {
     window.addEventListener('message', (event: any) => {
       if (event.data.type === 'loadWorkflow') {
         this.#hazelnutWorkflow = event.data.workflow
-        console.log('Should be loading workflow')
         if (this.#hazelnutReady) {
           this.loadGraphData(this.#hazelnutWorkflow, true, true, '')
         }
