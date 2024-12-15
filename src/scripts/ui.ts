@@ -435,12 +435,7 @@ export class ComfyUI {
     this.menuContainer = $el(
       'div.comfy-menu',
       {
-        parent: containerElement,
-        // BEGIN Hazelnut extensions
-        style: {
-          display: 'none'
-        }
-        // END Hazelnut extensions
+        parent: containerElement
       },
       [
         $el(
