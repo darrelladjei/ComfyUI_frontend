@@ -203,6 +203,12 @@ export class ComfyApp {
   // Assuming within iframe. Listens for workflow messages via postmessage.
   listenForWorkflow() {
     console.log('listening for workflows')
+    window.parent.postMessage(
+      {
+        type: 'ready'
+      },
+      '*'
+    )
     window.addEventListener('message', (event: any) => {
       if (event.data.type === 'loadWorkflow') {
         this.#hazelnutWorkflow = event.data.workflow
