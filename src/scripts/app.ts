@@ -226,6 +226,12 @@ export class ComfyApp {
   // Assuming within iframe. Listens for workflow messages via postmessage.
   listenForWorkflow() {
     console.log('listening for workflows')
+    window.parent.postMessage(
+      {
+        type: 'ready'
+      },
+      '*'
+    )
     window.addEventListener('message', (event: any) => {
       console.log('Got message', event.data)
       if (event.origin !== 'http://localhost:3000') return // Validate origin
