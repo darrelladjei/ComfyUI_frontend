@@ -193,28 +193,14 @@ export class ComfyApp {
      * @type {Record<string, Image>}
      */
     this.nodePreviewImages = {}
-
-    // BEGIN Hazelnut extensions
-    this.listenForWorkflow()
-    // END Hazelnut extensions
   }
 
   // BEGIN Hazelnut extensions
-  // Assuming within iframe. Listens for workflow messages via postmessage.
-  listenForWorkflow() {
-    console.log('listening for workflows')
-    window.parent.postMessage(
-      {
-        type: 'ready'
-      },
-      '*'
-    )
+  // Assuming within iframe.
+  setupHazelnutExtensions() {
     window.addEventListener('message', (event: any) => {
       if (event.data.type === 'loadWorkflow') {
-        this.#hazelnutWorkflow = event.data.workflow
-        if (this.#hazelnutReady) {
-          this.loadGraphData(this.#hazelnutWorkflow, true, true, '')
-        }
+        this.loadGraphData(event.data.workflow, true, true, '')
         event.source.postMessage(
           { type: 'response', message: 'Received' },
           event.origin
@@ -229,6 +215,12 @@ export class ComfyApp {
         )
       }
     })
+    window.parent.postMessage(
+      {
+        type: 'ready'
+      },
+      '*'
+    )
   }
 
   async convertJsonWorkflows(inputDirectory: string) {
@@ -2180,8 +2172,7 @@ export class ComfyApp {
     }
 
     // BEGIN Hazelnut extensions
-    if (this.#hazelnutWorkflow)
-      await this.loadGraphData(this.#hazelnutWorkflow, true, true, '')
+    this.setupHazelnutExtensions()
     // END Hazelnut extensions
 
     // Save current workflow automatically
@@ -2202,10 +2193,6 @@ export class ComfyApp {
     this.#addWidgetLinkHandling()
 
     await this.#invokeExtensionsAsync('setup')
-
-    // BEGIN Hazelnut extensions
-    this.#hazelnutReady = true
-    // END Hazelnut extensions
   }
 
   resizeCanvas() {
