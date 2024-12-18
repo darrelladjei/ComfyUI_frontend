@@ -144,9 +144,7 @@ export class ComfyApp {
   menu: ComfyAppMenu
   bypassBgColor: string
 
-  #hazelnutWorkflow: any = null
-  #hazelnutReady: boolean = false
-
+  #hazelnutWorkflowId: string = null
   /**
    * @deprecated Use useExecutionStore().executingNodeId instead
    */
@@ -200,6 +198,7 @@ export class ComfyApp {
   setupHazelnutExtensions() {
     window.addEventListener('message', (event: any) => {
       if (event.data.type === 'loadWorkflow') {
+        this.#hazelnutWorkflowId = event.data.id
         this.loadGraphData(event.data.workflow, true, true, '')
         event.source.postMessage(
           { type: 'response', message: 'Received' },
@@ -208,9 +207,9 @@ export class ComfyApp {
       }
 
       if (event.data.type === 'getWorkflow') {
-        const worklflow = localStorage.getItem('workflow')
+        const workflow = localStorage.getItem('workflow')
         event.source.postMessage(
-          { type: 'workflow', message: worklflow },
+          { type: 'workflow', workflow, id: this.#hazelnutWorkflowId },
           event.origin
         )
       }
