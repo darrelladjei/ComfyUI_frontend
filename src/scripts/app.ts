@@ -196,10 +196,10 @@ export class ComfyApp {
   // BEGIN Hazelnut extensions
   // Assuming within iframe.
   setupHazelnutExtensions() {
-    window.addEventListener('message', (event: any) => {
+    window.addEventListener('message', async (event: any) => {
       if (event.data.type === 'loadWorkflow') {
+        await this.loadGraphData(event.data.workflow, true, true, '')
         this.#hazelnutWorkflowId = event.data.id
-        this.loadGraphData(event.data.workflow, true, true, '')
         event.source.postMessage(
           { type: 'response', message: 'Received' },
           event.origin
