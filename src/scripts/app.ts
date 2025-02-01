@@ -54,11 +54,6 @@ import { type ComfyWidgetConstructor, ComfyWidgets } from './widgets'
 
 export const ANIM_PREVIEW_WIDGET = '$$comfy_animation_preview'
 
-// BEGIN Hazelnut imports
-import fs from 'fs'
-import path from 'path'
-// END Hazelnut imports
-
 function sanitizeNodeName(string) {
   let entityMap = {
     '&': '',
@@ -133,9 +128,9 @@ export class ComfyApp {
   menu: ComfyAppMenu
   bypassBgColor: string
   // Set by Comfy.Clipspace extension
-  openClipspace: () => void = () => { }
+  openClipspace: () => void = () => {}
 
-  #hazelnutWorkflow: string = null
+  #hazelnutWorkflowId: string = null
 
   /**
    * @deprecated Use useExecutionStore().executingNodeId instead
@@ -216,221 +211,35 @@ export class ComfyApp {
      * @type {Record<string, Image>}
      */
     this.nodePreviewImages = {}
-
-    // BEGIN Hazelnut extensions
-    this.listenForWorkflow()
-    // END Hazelnut extensions
   }
 
   // BEGIN Hazelnut extensions
-  // Assuming within iframe. Listens for workflow messages via postmessage.
-  listenForWorkflow() {
-    console.log('listening for workflows')
+  // Assuming within iframe.
+  setupHazelnutExtensions() {
+    window.addEventListener('message', async (event: any) => {
+      if (event.data.type === 'loadWorkflow') {
+        await this.loadGraphData(event.data.workflow, true, true, '')
+        this.#hazelnutWorkflowId = event.data.id
+        event.source.postMessage(
+          { type: 'response', message: 'Received' },
+          event.origin
+        )
+      }
+
+      if (event.data.type === 'getWorkflow') {
+        const workflow = localStorage.getItem('workflow')
+        event.source.postMessage(
+          { type: 'workflow', workflow, id: this.#hazelnutWorkflowId },
+          event.origin
+        )
+      }
+    })
     window.parent.postMessage(
       {
         type: 'ready'
       },
       '*'
     )
-    window.addEventListener('message', (event: any) => {
-      console.log('Got message', event.data)
-      if (event.origin !== 'http://localhost:3000') return // Validate origin
-      if (event.data.type === 'loadWorkflow')
-        this.#hazelnutWorkflow = event.data.workflowJson
-
-      // Send a response back
-      event.source.postMessage(
-        { type: 'response', message: 'Received' },
-        event.origin
-      )
-    })
-  }
-
-  async convertWorkflows(inputDirectory: string) {
-    console.log('convertWorkflows()...')
-    try {
-      const workflowListResponse = await fetch(
-        `${inputDirectory}/workflowList.json`
-      )
-      const fileList = await workflowListResponse.json()
-
-      for (const file of fileList) {
-        console.log('Looking at file', file)
-        try {
-          // Fetch each workflow JSON file
-          const workflowDataResponse = await fetch(`${inputDirectory}/${file}`)
-          const workflowData = await workflowDataResponse.text()
-          const workflowJson = JSON.parse(workflowData)
-
-          // Create a new graph instance
-          const graph = new LGraph()
-          graph.configure(workflowJson)
-
-          // Convert the graph to API format
-          const apiWorkflow = (await this._graphToPrompt(graph))?.output
-
-          // Here, trigger a download for each file, or send the data to a server
-          const outputData = JSON.stringify(apiWorkflow, null, 2)
-          const blob = new Blob([outputData], { type: 'application/json' })
-          const link = document.createElement('a')
-          link.href = URL.createObjectURL(blob)
-          link.download = `api-${file}`
-          document.body.appendChild(link)
-          link.click()
-          document.body.removeChild(link)
-          console.log(`Converted workflow ${file} to API format.`)
-        } catch (error) {
-          console.error(`Error processing ${file}:`, error)
-        }
-      }
-    } catch (error) {
-      console.error('Error fetching workflow files:', error)
-    }
-  }
-
-  /**
-   * Converts the current graph workflow for sending to the API
-   * @returns The workflow and node links
-   */
-  async _graphToPrompt(graph: LGraph, clean = true) {
-    console.log('_graphToPrompt()...')
-    for (const outerNode of graph.computeExecutionOrder(false)) {
-      if (outerNode.widgets) {
-        for (const widget of outerNode.widgets) {
-          // Allow widgets to run callbacks before a prompt has been queued
-          // e.g. random seed before every gen
-          widget.beforeQueued?.()
-        }
-      }
-
-      const innerNodes = outerNode['getInnerNodes']
-        ? outerNode['getInnerNodes']()
-        : [outerNode]
-      for (const node of innerNodes) {
-        if (node.isVirtualNode) {
-          // Don't serialize frontend only nodes but let them make changes
-          if (node.applyToGraph) {
-            node.applyToGraph()
-          }
-        }
-      }
-    }
-
-    const sortNodes = useSettingStore().get('Comfy.Workflow.SortNodeIdOnSave')
-
-    const workflow = graph.serialize({ sortNodes })
-    const output = {}
-    // Process nodes in order of execution
-    for (const outerNode of graph.computeExecutionOrder(false)) {
-      const skipNode = outerNode.mode === 2 || outerNode.mode === 4
-      const innerNodes =
-        !skipNode && outerNode['getInnerNodes']
-          ? outerNode['getInnerNodes']()
-          : [outerNode]
-      for (const node of innerNodes) {
-        if (node.isVirtualNode) {
-          continue
-        }
-
-        if (node.mode === 2 || node.mode === 4) {
-          // Don't serialize muted nodes
-          continue
-        }
-
-        const inputs = {}
-        const widgets = node.widgets
-
-        // Store all widget values
-        if (widgets) {
-          for (const i in widgets) {
-            const widget = widgets[i]
-            if (!widget.options || widget.options.serialize !== false) {
-              inputs[widget.name] = widget.serializeValue
-                ? await widget.serializeValue(node, i)
-                : widget.value
-            }
-          }
-        }
-
-        // Store all node links
-        for (let i in node.inputs) {
-          let parent = node.getInputNode(i)
-          if (parent) {
-            let link = node.getInputLink(i)
-            while (parent.mode === 4 || parent.isVirtualNode) {
-              let found = false
-              if (parent.isVirtualNode) {
-                link = parent.getInputLink(link.origin_slot)
-                if (link) {
-                  parent = parent.getInputNode(link.target_slot)
-                  if (parent) {
-                    found = true
-                  }
-                }
-              } else if (link && parent.mode === 4) {
-                let all_inputs = [link.origin_slot]
-                if (parent.inputs) {
-                  all_inputs = all_inputs.concat(Object.keys(parent.inputs))
-                  for (let parent_input in all_inputs) {
-                    parent_input = all_inputs[parent_input]
-                    if (
-                      parent.inputs[parent_input]?.type === node.inputs[i].type
-                    ) {
-                      link = parent.getInputLink(parent_input)
-                      if (link) {
-                        parent = parent.getInputNode(parent_input)
-                      }
-                      found = true
-                      break
-                    }
-                  }
-                }
-              }
-
-              if (!found) {
-                break
-              }
-            }
-
-            if (link) {
-              if (parent?.updateLink) {
-                link = parent.updateLink(link)
-              }
-              if (link) {
-                inputs[node.inputs[i].name] = [
-                  String(link.origin_id),
-                  parseInt(link.origin_slot)
-                ]
-              }
-            }
-          }
-        }
-
-        let node_data = {
-          inputs,
-          class_type: node.comfyClass,
-          _meta: { title: node.title ?? 'title' }
-        }
-        output[String(node.id)] = node_data
-      }
-    }
-
-    // Remove inputs connected to removed nodes
-    if (clean) {
-      for (const o in output) {
-        for (const i in output[o].inputs) {
-          if (
-            Array.isArray(output[o].inputs[i]) &&
-            output[o].inputs[i].length === 2 &&
-            !output[output[o].inputs[i][0]]
-          ) {
-            delete output[o].inputs[i]
-          }
-        }
-      }
-    }
-
-    return { workflow, output }
   }
   // END Hazelnut extensions
 
@@ -1219,7 +1028,6 @@ export class ComfyApp {
    * Set up the app on the page
    */
   async setup(canvasEl: HTMLCanvasElement) {
-    console.log('ComfyApp.setup()...')
     this.canvasEl = canvasEl
     this.resizeCanvas()
 
@@ -1260,7 +1068,7 @@ export class ComfyApp {
     await this.registerNodes()
 
     // BEGIN Hazelnut extensions
-    this.loadApiJson(this.#hazelnutWorkflow, '')
+    this.setupHazelnutExtensions()
     // END Hazelnut extensions
 
     // Save current workflow automatically
@@ -1486,7 +1294,7 @@ export class ComfyApp {
       // TODO: Show validation error in a dialog.
       const validatedGraphData = await validateComfyWorkflow(
         graphData,
-        /* onError=*/(err) => {
+        /* onError=*/ (err) => {
           useToastStore().addAlert(err)
         }
       )
@@ -1890,7 +1698,7 @@ export class ComfyApp {
 
     try {
       while (this.#queueItems.length) {
-        ; ({ number, batchCount } = this.#queueItems.pop())
+        ;({ number, batchCount } = this.#queueItems.pop())
 
         for (let i = 0; i < batchCount; i++) {
           const p = await this.graphToPrompt()
@@ -1909,7 +1717,7 @@ export class ComfyApp {
                   workflow: useWorkspaceStore().workflow
                     .activeWorkflow as ComfyWorkflow
                 })
-              } catch (error) { }
+              } catch (error) {}
             }
           } catch (error) {
             const formattedError = this.#formatPromptError(error)
@@ -2108,7 +1916,7 @@ export class ComfyApp {
               if (widget && node.convertWidgetToInput?.(widget)) {
                 toSlot = node.inputs?.length - 1
               }
-            } catch (error) { }
+            } catch (error) {}
           }
           if (toSlot != null || toSlot !== -1) {
             fromNode.connect(fromSlot, node, toSlot)
@@ -2140,7 +1948,7 @@ export class ComfyApp {
               if (widget && node.convertWidgetToInput?.(widget)) {
                 toSlot = node.inputs?.length - 1
               }
-            } catch (error) { }
+            } catch (error) {}
           }
           if (toSlot != null || toSlot !== -1) {
             fromNode.connect(fromSlot, node, toSlot)
