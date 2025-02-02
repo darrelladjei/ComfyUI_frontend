@@ -1071,16 +1071,6 @@ export class ComfyApp {
     this.setupHazelnutExtensions()
     // END Hazelnut extensions
 
-    // Save current workflow automatically
-    setInterval(() => {
-      const sortNodes = useSettingStore().get('Comfy.Workflow.SortNodeIdOnSave')
-      const workflow = JSON.stringify(this.graph.serialize({ sortNodes }))
-      localStorage.setItem('workflow', workflow)
-      if (api.clientId) {
-        sessionStorage.setItem(`workflow:${api.clientId}`, workflow)
-      }
-    }, 1000)
-
     this.#addDrawNodeHandler()
     this.#addDrawGroupsHandler()
     this.#addDropHandler()
