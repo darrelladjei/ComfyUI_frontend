@@ -218,7 +218,8 @@ export class ComfyApp {
   setupHazelnutExtensions() {
     window.addEventListener('message', async (event: any) => {
       if (event.data.type === 'loadWorkflow') {
-        await this.loadGraphData(event.data.workflow, true, true, '')
+        // await this.loadGraphData(event.data.workflow, true, true, '')
+        this.loadApiJson(event.data.workflow, '')
         this.#hazelnutWorkflowId = event.data.id
         event.source.postMessage(
           { type: 'response', message: 'Received' },
@@ -227,9 +228,10 @@ export class ComfyApp {
       }
 
       if (event.data.type === 'getWorkflow') {
-        const workflow = localStorage.getItem('workflow')
+        // let workflow = localStorage.getItem('workflow')
+        const _workflowApi = await this.graphToPrompt(this.graph)
         event.source.postMessage(
-          { type: 'workflow', workflow, id: this.#hazelnutWorkflowId },
+          { type: 'workflow', _workflowApi, id: this.#hazelnutWorkflowId },
           event.origin
         )
       }
